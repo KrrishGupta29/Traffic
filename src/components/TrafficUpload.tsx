@@ -68,7 +68,15 @@ export const TrafficUpload: React.FC<TrafficUploadProps> = ({
               <div />
               {/* North */}
               <div className="relative border-2 border-dashed rounded-lg p-4 text-center">
-                <input type="file" accept="video/*" className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" onChange={handleLaneInput('north')} disabled={isProcessing} />
+                <input 
+                  type="file" 
+                  accept="video/*" 
+                  title="Upload video for North direction"
+                  aria-label="Upload video for North direction"
+                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" 
+                  onChange={handleLaneInput('north')} 
+                  disabled={isProcessing} 
+                />
                 {laneFiles.north ? (
                   <div className="space-y-2">
                     {lanePreviews['north'] && (<video src={lanePreviews['north'] || undefined} className="w-full h-40 object-cover" controls />)}
@@ -82,7 +90,15 @@ export const TrafficUpload: React.FC<TrafficUploadProps> = ({
 
               {/* West */}
               <div className="relative border-2 border-dashed rounded-lg p-4 text-center">
-                <input type="file" accept="video/*" className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" onChange={handleLaneInput('west')} disabled={isProcessing} />
+                <input 
+                  type="file" 
+                  accept="video/*" 
+                  title="Upload video for West direction"
+                  aria-label="Upload video for West direction"
+                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" 
+                  onChange={handleLaneInput('west')} 
+                  disabled={isProcessing} 
+                />
                 {laneFiles.west ? (
                   <div className="space-y-2">
                     {lanePreviews['west'] && (<video src={lanePreviews['west'] || undefined} className="w-full h-40 object-cover" controls />)}
@@ -98,7 +114,15 @@ export const TrafficUpload: React.FC<TrafficUploadProps> = ({
 
               {/* East */}
               <div className="relative border-2 border-dashed rounded-lg p-4 text-center">
-                <input type="file" accept="video/*" className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" onChange={handleLaneInput('east')} disabled={isProcessing} />
+                <input 
+                  type="file" 
+                  accept="video/*" 
+                  title="Upload video for East direction"
+                  aria-label="Upload video for East direction"
+                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" 
+                  onChange={handleLaneInput('east')} 
+                  disabled={isProcessing} 
+                />
                 {laneFiles.east ? (
                   <div className="space-y-2">
                     {lanePreviews['east'] && (<video src={lanePreviews['east'] || undefined} className="w-full h-40 object-cover" controls />)}
@@ -112,7 +136,15 @@ export const TrafficUpload: React.FC<TrafficUploadProps> = ({
               <div />
               {/* South */}
               <div className="relative border-2 border-dashed rounded-lg p-4 text-center">
-                <input type="file" accept="video/*" className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" onChange={handleLaneInput('south')} disabled={isProcessing} />
+                <input 
+                  type="file" 
+                  accept="video/*" 
+                  title="Upload video for South direction"
+                  aria-label="Upload video for South direction"
+                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" 
+                  onChange={handleLaneInput('south')} 
+                  disabled={isProcessing} 
+                />
                 {laneFiles.south ? (
                   <div className="space-y-2">
                     {lanePreviews['south'] && (<video src={lanePreviews['south'] || undefined} className="w-full h-40 object-cover" controls />)}

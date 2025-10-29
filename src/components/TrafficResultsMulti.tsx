@@ -50,6 +50,17 @@ export const TrafficResultsMulti: React.FC<TrafficResultsMultiProps> = ({ lanes,
     setTimeLeft(startPhase === 'NS' ? nsTime : ewTime);
   }, [nsTime, ewTime]);
 
+  // Determine the light color for a given pair based on current phase and remaining time
+  const getPairPhase = (pair: 'NS' | 'EW'): 'green' | 'amber' | 'red' => {
+    if (currentPhase === pair) {
+      // when active, use the shared timeLeft for coloring
+      if (timeLeft > 5) return 'green';
+      if (timeLeft > 0) return 'amber';
+      return 'red';
+    }
+    return 'red';
+  };
+
   React.useEffect(() => {
     if (isComplete) return;
 
@@ -125,72 +136,51 @@ export const TrafficResultsMulti: React.FC<TrafficResultsMultiProps> = ({ lanes,
     <div className="w-full max-w-6xl mx-auto space-y-6 animate-fade-in-up">
       {/* Compact 2x2 grid so all lanes are visible without vertical scrolling */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div>{renderCompactCard(north, 'NORTH')}</div>
+        <div>
+          {renderCompactCard(
+            north,
+            'NORTH',
+            north ? (
+              <div className="-mr-2 flex items-center gap-3">
+                <TrafficLight compact currentPhase={getPairPhase('NS')} />
+                <div className="text-right">
+                  <div className={`text-sm font-semibold ${currentPhase === 'NS' ? 'text-success' : 'text-muted-foreground'}`}>
+                    NS: {currentPhase === 'NS' ? timeLeft : nsTime}s
+                  </div>
+                  <div className={`text-xs font-medium ${currentPhase === 'NS' ? 'text-success' : 'text-muted-foreground'}`}>
+                    {currentPhase === 'NS' ? 'ACTIVE' : 'INACTIVE'}
+                  </div>
+                </div>
+              </div>
+            ) : undefined
+          )}
+        </div>
 
-        <div>{renderCompactCard(east, 'EAST')}</div>
+        <div>
+          {renderCompactCard(
+            east,
+            'EAST',
+            east ? (
+              <div className="-mr-2 flex items-center gap-3">
+                <TrafficLight compact currentPhase={getPairPhase('EW')} />
+                <div className="text-right">
+                  <div className={`text-sm font-semibold ${currentPhase === 'EW' ? 'text-success' : 'text-muted-foreground'}`}>
+                    EW: {currentPhase === 'EW' ? timeLeft : ewTime}s
+                  </div>
+                  <div className={`text-xs font-medium ${currentPhase === 'EW' ? 'text-success' : 'text-muted-foreground'}`}>
+                    {currentPhase === 'EW' ? 'ACTIVE' : 'INACTIVE'}
+                  </div>
+                </div>
+              </div>
+            ) : undefined
+          )}
+        </div>
 
         <div>{renderCompactCard(south, 'SOUTH')}</div>
         <div>{renderCompactCard(west, 'WEST')}</div>
       </div>
 
-      {/* Traffic Light Control Section */}
-      <Card className="bg-gradient-card border-border shadow-card">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Timer className="w-5 h-5" />
-            Traffic Light Control
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* North-South Traffic Light */}
-            <div className="flex flex-col items-center space-y-4">
-              <div className="text-lg font-semibold text-center">North-South</div>
-              <TrafficLight
-                currentPhase={
-                  currentPhase === 'NS'
-                    ? (timeLeft > 5 ? 'green' : (timeLeft > 0 ? 'amber' : 'red'))
-                    : 'red'
-                }
-              />
-              <div className="text-center space-y-2">
-                <div className={`text-2xl font-bold ${currentPhase === 'NS' ? 'text-success' : 'text-muted-foreground'}`}>
-                  {currentPhase === 'NS' ? timeLeft : nsTime}
-                </div>
-                <div className="text-sm text-muted-foreground">
-                  {currentPhase === 'NS' ? 'seconds remaining' : 'seconds total'}
-                </div>
-                <div className={`text-xs font-medium ${currentPhase === 'NS' ? 'text-success' : 'text-muted-foreground'}`}>
-                  {currentPhase === 'NS' ? 'ACTIVE' : 'INACTIVE'}
-                </div>
-              </div>
-            </div>
-
-            {/* East-West Traffic Light */}
-            <div className="flex flex-col items-center space-y-4">
-              <div className="text-lg font-semibold text-center">East-West</div>
-              <TrafficLight
-                currentPhase={
-                  currentPhase === 'EW'
-                    ? (timeLeft > 5 ? 'green' : (timeLeft > 0 ? 'amber' : 'red'))
-                    : 'red'
-                }
-              />
-              <div className="text-center space-y-2">
-                <div className={`text-2xl font-bold ${currentPhase === 'EW' ? 'text-success' : 'text-muted-foreground'}`}>
-                  {currentPhase === 'EW' ? timeLeft : ewTime}
-                </div>
-                <div className="text-sm text-muted-foreground">
-                  {currentPhase === 'EW' ? 'seconds remaining' : 'seconds total'}
-                </div>
-                <div className={`text-xs font-medium ${currentPhase === 'EW' ? 'text-success' : 'text-muted-foreground'}`}>
-                  {currentPhase === 'EW' ? 'ACTIVE' : 'INACTIVE'}
-                </div>
-              </div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+      {/* bottom traffic control UI removed - NS/EW timers and status are now shown beside NORTH/EAST cards */}
     </div>
   );
 };

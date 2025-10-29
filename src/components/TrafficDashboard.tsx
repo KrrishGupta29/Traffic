@@ -32,8 +32,24 @@ export const TrafficDashboard: React.FC = () => {
   const [appState, setAppState] = useState<AppState>('setup');
   const [progress, setProgress] = useState(0);
   const [results, setResults] = useState<DetectionResult | null>(null);
-  const [region, setRegion] = useState('');
-  const [intersectionId, setIntersectionId] = useState('');
+  const regions = [
+    'North West Delhi',
+    'North East Delhi',
+    'South West Delhi',
+    'South East Delhi'
+  ];
+
+  const intersections = [
+    'Sai Baba Chowk',
+    'Madhuban Chowk',
+    'Rithala Metro Junction',
+    'Deepali Chowk',
+    'Mukarba Chowk',
+    'Punjabi Bagh Crossing'
+  ];
+
+  const [region, setRegion] = useState(regions[0]);
+  const [intersectionName, setIntersectionName] = useState(intersections[0]);
   const [intersectionConfirmed, setIntersectionConfirmed] = useState(false);
   const [error, setError] = useState('');
 
@@ -133,19 +149,34 @@ export const TrafficDashboard: React.FC = () => {
     setProgress(0);
     setResults(null);
     setRegion('');
-    setIntersectionId('');
+    setIntersectionName(intersections[0]);
     setIntersectionConfirmed(false);
     setError('');
   };
 
-  const handleConfirmIntersection = () => {
-    if (!region.trim() || !intersectionId.trim()) {
-      setError('Please fill in both Region and Intersection ID.');
+  const handleConfirmIntersection = async () => {
+    if (!region || !intersectionName) {
+      setError('Please select both Region and Intersection Name.');
       return;
     }
     setError('');
-    setIntersectionConfirmed(true);
-    setAppState('upload');
+    try {
+      // Post metadata to backend so server can use it during analyze
+      const resp = await fetch('http://localhost:5000/api/metadata', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ region_name: region, intersection_id: intersectionName }),
+      });
+      if (!resp.ok) {
+        const txt = await resp.text();
+        throw new Error(`Failed to set metadata: ${txt}`);
+      }
+      setIntersectionConfirmed(true);
+      setAppState('upload');
+    } catch (err: any) {
+      console.error('Failed to confirm intersection:', err);
+      setError('Failed to confirm intersection on server. See console.');
+    }
   };
 
   // ===== Render =====
@@ -187,28 +218,38 @@ export const TrafficDashboard: React.FC = () => {
                   <CardTitle>Enter Region</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <input
-                    type="text"
+                  <select
                     value={region}
                     onChange={(e) => setRegion(e.target.value)}
-                    placeholder="Enter region name"
                     className="w-full p-3 rounded-xl border border-gray-300 bg-transparent text-white focus:outline-none focus:ring-2 focus:ring-indigo-400 shadow-inner transition-all duration-200"
-                  />
+                    aria-label="Select Region"
+                  >
+                    {regions.map((r) => (
+                      <option key={r} value={r} className="bg-card">
+                        {r}
+                      </option>
+                    ))}
+                  </select>
                 </CardContent>
               </Card>
 
               <Card className="bg-gradient-card border-border shadow-card">
                 <CardHeader>
-                  <CardTitle>Enter Intersection ID</CardTitle>
+                  <CardTitle>Select Intersection</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <input
-                    type="text"
-                    value={intersectionId}
-                    onChange={(e) => setIntersectionId(e.target.value)}
-                    placeholder="Enter intersection ID"
+                  <select
+                    value={intersectionName}
+                    onChange={(e) => setIntersectionName(e.target.value)}
                     className="w-full p-3 rounded-xl border border-gray-300 bg-transparent text-white focus:outline-none focus:ring-2 focus:ring-indigo-400 shadow-inner transition-all duration-200"
-                  />
+                    aria-label="Select Intersection"
+                  >
+                    {intersections.map((intersection) => (
+                      <option key={intersection} value={intersection} className="bg-card">
+                        {intersection}
+                      </option>
+                    ))}
+                  </select>
                 </CardContent>
               </Card>
 

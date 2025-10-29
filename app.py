@@ -8,13 +8,30 @@ from PIL import Image
 import cv2
 from typing import Optional
 from datetime import datetime
+import datetime as _dt
 
 from stream_processor import StreamProcessor, analyze_video_file
+from db import init_db, insert_result
+from db import fetch_latest_result
 
 
 # Initialize Flask app
 app = Flask(__name__)
 CORS(app)
+
+# Initialize DB (creates database + table if missing)
+try:
+    init_db()
+except Exception as e:
+    print(f"[app] DB init error: {e}")
+
+# Simple in-memory metadata store for region/intersection set by the UI's "Confirm Intersection" action.
+# This is a minimal solution for a single-user/local setup. For multi-user use a proper persistent store
+# or associate metadata with a session id provided by the client.
+metadata_store = {
+    'region_name': '',
+    'intersection_id': '',
+}
 
 # Configuration
 UPLOAD_FOLDER = 'uploads'
@@ -133,14 +150,41 @@ def detect():
     if emergency_detected:
         signal_time += 10  # extend green time for emergency vehicles
 
-    
+    # Store result in DB (use defaults if region/intersection not provided)
+    try:
+        region_name = (
+            request.form.get('region_name')
+            or request.form.get('Region_Name')
+            or request.values.get('region_name')
+            or request.values.get('Region_Name')
+            or metadata_store.get('region_name', '')
+            or ''
+        )
+        intersection_id = (
+            request.form.get('intersection_id')
+            or request.form.get('Intersection_ID')
+            or request.values.get('intersection_id')
+            or request.values.get('Intersection_ID')
+            or metadata_store.get('intersection_id', '')
+            or ''
+        )
+        now = datetime.now()
+        insert_result(
+            region_name,
+            intersection_id,
+            now.date(),
+            now.time(),
+            int(vehicle_count),
+            int(signal_time),
+        )
+    except Exception as _e:
+        print(f"[app] Failed to insert detect result: {_e}")
 
     return jsonify({
         'vehicleCount': vehicle_count,
         'emergencyDetected': emergency_detected,
         'signalTime': signal_time,
         'detectedImage': f'/results/{filename}'
-       
     })
 
 @app.route('/results/<path:filename>')
@@ -217,6 +261,25 @@ def stream_stop():
     return jsonify({"stopped": True})
 
 
+@app.route('/api/metadata', methods=['GET', 'POST'])
+def set_metadata():
+    """Set or get the current region/intersection metadata.
+
+    POST body or form: region_name, intersection_id
+    GET returns the current stored values.
+    """
+    if request.method == 'GET':
+        return jsonify(metadata_store)
+
+    # POST: accept JSON or form
+    data = request.get_json(silent=True) or request.form or request.values
+    region = data.get('region_name') or data.get('Region_Name') or ''
+    intersection = data.get('intersection_id') or data.get('Intersection_ID') or ''
+    metadata_store['region_name'] = region
+    metadata_store['intersection_id'] = intersection
+    return jsonify({'ok': True, 'region_name': region, 'intersection_id': intersection})
+
+
 @app.route('/api/video/analyze', methods=['POST'])
 def analyze_video():
     if 'video' not in request.files:
@@ -275,6 +338,36 @@ def analyze_video():
     except Exception:
         st = 33
     metrics['signalTime'] = max(15, min(65, st))
+    # Store a DB record for this analyzed video (use defaults when metadata not provided)
+    try:
+        region_name = (
+            request.form.get('region_name')
+            or request.form.get('Region_Name')
+            or request.values.get('region_name')
+            or request.values.get('Region_Name')
+            or metadata_store.get('region_name', '')
+            or ''
+        )
+        intersection_id = (
+            request.form.get('intersection_id')
+            or request.form.get('Intersection_ID')
+            or request.values.get('intersection_id')
+            or request.values.get('Intersection_ID')
+            or metadata_store.get('intersection_id', '')
+            or ''
+        )
+        now = datetime.now()
+        insert_result(
+            region_name,
+            intersection_id,
+            now.date(),
+            now.time(),
+            int(metrics.get('vehicleCount', 0)),
+            int(metrics.get('signalTime', 0)),
+        )
+    except Exception as _e:
+        print(f"[app] Failed to insert analyze_video result: {_e}")
+
     return jsonify(metrics)
 
 
@@ -382,6 +475,55 @@ def analyze_video_multi_v1():
     # Sort in compass order
     order = {'north': 0, 'west': 1, 'east': 2, 'south': 3}
     lanes_out.sort(key=lambda x: order.get(x.get('direction', ''), 99))
+
+    # Insert a single aggregated record for this Analyze Lanes action
+    try:
+        region_name = (
+            request.form.get('region_name')
+            or request.form.get('Region_Name')
+            or request.values.get('region_name')
+            or request.values.get('Region_Name')
+            or metadata_store.get('region_name', '')
+            or ''
+        )
+        intersection_id = (
+            request.form.get('intersection_id')
+            or request.form.get('Intersection_ID')
+            or request.values.get('intersection_id')
+            or request.values.get('Intersection_ID')
+            or metadata_store.get('intersection_id', '')
+            or ''
+        )
+        now = datetime.now()
+        # compute maxima across directions
+        max_vehicle = 0
+        max_green = 0
+        for lane in lanes_out:
+            try:
+                vc = int(lane.get('vehicleCount', 0))
+            except Exception:
+                vc = 0
+            try:
+                gt = int(lane.get('signalTime', 0))
+            except Exception:
+                gt = 0
+            if vc > max_vehicle:
+                max_vehicle = vc
+            if gt > max_green:
+                max_green = gt
+
+        # Insert single aggregated row
+        insert_result(
+            region_name,
+            intersection_id,
+            now.date(),
+            now.time(),
+            max_vehicle,
+            max_green,
+        )
+    except Exception as _e:
+        print(f"[app] Failed to insert analyze_video_multi_v1 aggregated result: {_e}")
+
     return jsonify({ 'lanes': lanes_out })
 
 
@@ -428,7 +570,134 @@ def analyze_video_multi():
                 "annotatedVideo": None,
             })
 
+
+    # Insert a single aggregated record for this Analyze Lanes (legacy lane1..lane4)
+    try:
+        region_name = (
+            request.form.get('region_name')
+            or request.form.get('Region_Name')
+            or request.values.get('region_name')
+            or request.values.get('Region_Name')
+            or metadata_store.get('region_name', '')
+            or ''
+        )
+        intersection_id = (
+            request.form.get('intersection_id')
+            or request.form.get('Intersection_ID')
+            or request.values.get('intersection_id')
+            or request.values.get('Intersection_ID')
+            or metadata_store.get('intersection_id', '')
+            or ''
+        )
+        now = datetime.now()
+
+        max_vehicle = 0
+        max_green = 0
+        hour = datetime.now().hour
+        for lane in lanes:
+            try:
+                vcount = int(lane.get('vehicleCount', 0))
+            except Exception:
+                vcount = 0
+            try:
+                rate = float(lane.get('rateOfChange', 0.0))
+            except Exception:
+                rate = 0.0
+
+            if (8 <= hour <= 11) or (18 <= hour <= 22):
+                time_effect = 3
+            elif (hour >= 22) or (hour <= 7):
+                time_effect = -3
+            else:
+                time_effect = 0
+
+            raw_time = 33 + (10 * rate) + 2 * (vcount - 10) + time_effect
+            try:
+                st = int(round(raw_time))
+            except Exception:
+                st = 33
+            signal_time = max(15, min(65, st))
+
+            if vcount > max_vehicle:
+                max_vehicle = vcount
+            if signal_time > max_green:
+                max_green = signal_time
+
+        insert_result(
+            region_name,
+            intersection_id,
+            now.date(),
+            now.time(),
+            max_vehicle,
+            max_green,
+        )
+    except Exception as _e:
+        print(f"[app] Failed to insert analyze_video_multi aggregated result: {_e}")
+
     return jsonify({"lanes": lanes})
+
+
+@app.route('/api/db/test', methods=['GET', 'POST'])
+def db_test():
+    """Test endpoint to insert a sample row into the results table.
+
+    Accepts optional form/query params: region_name, intersection_id, vehicle_count, green_time
+    """
+    try:
+        # Accept values from form (POST) or querystring (GET)
+        region_name = request.values.get('region_name') or request.values.get('Region_Name') or 'TestRegion'
+        intersection_id = request.values.get('intersection_id') or request.values.get('Intersection_ID') or 'TEST-1'
+        try:
+            vehicle_count = int(request.values.get('vehicle_count', 5))
+        except Exception:
+            vehicle_count = 5
+        try:
+            green_time = int(request.values.get('green_time', 30))
+        except Exception:
+            green_time = 30
+
+        now = datetime.now()
+        last_id = insert_result(region_name, intersection_id, now.date(), now.time(), vehicle_count, green_time)
+        return jsonify({
+            'ok': True,
+            'inserted_id': last_id,
+            'region_name': region_name,
+            'intersection_id': intersection_id,
+            'vehicle_count': vehicle_count,
+            'green_time': green_time,
+        })
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+
+@app.route('/api/db/latest', methods=['GET'])
+def db_latest():
+    """Return the latest stored aggregated result for a given region/intersection.
+
+    Query params: region_name, intersection_id
+    """
+    region = request.args.get('region_name') or request.args.get('Region_Name')
+    intersection = request.args.get('intersection_id') or request.args.get('Intersection_ID')
+    if not region or not intersection:
+        return jsonify({'error': 'Missing region_name or intersection_id'}), 400
+    try:
+        row = fetch_latest_result(region, intersection)
+        if not row:
+            return jsonify({'ok': False, 'error': 'No records found for the provided region/intersection'}), 404
+        # Convert any non-JSON-serializable types (datetime/date/time/timedelta) to strings
+        for k, v in list(row.items()):
+            try:
+                if isinstance(v, (_dt.datetime, _dt.date, _dt.time, _dt.timedelta)):
+                    row[k] = str(v)
+                else:
+                    # leave other types as-is (numbers, strings)
+                    row[k] = v
+            except Exception:
+                row[k] = str(v)
+        return jsonify({'ok': True, 'row': row})
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
 
 if __name__ == '__main__':
     app.run(debug=True)
