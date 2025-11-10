@@ -14,6 +14,8 @@ interface LaneResult {
   annotatedVideo?: string;
   vehicleCount?: number;
   direction?: string;
+  emergencyDetected?: boolean | number | string;
+  emergencyCount?: number;
 }
 
 interface DetectionResult {
@@ -110,15 +112,28 @@ export const TrafficDashboard: React.FC = () => {
         if (!resp.ok) throw new Error('Multi-lane analysis failed');
         const data = await resp.json();
         setProgress(100);
-        const lanesOut: LaneResult[] = (data.lanes || []).map((ln: any, idx: number) => ({
-          laneId: typeof ln.laneId === 'number' ? ln.laneId : idx + 1,
-          signalTime: ln.signalTime,
-          vehiclesPerSecond: ln.vehiclesPerSecond,
-          rateOfChange: ln.rateOfChange,
-          annotatedVideo: ln.annotatedVideo ? `http://localhost:5000${ln.annotatedVideo}` : undefined,
-          vehicleCount: ln.vehicleCount,
-          direction: ln.direction,
-        }));
+        const lanesOut: LaneResult[] = (data.lanes || []).map((ln: any, idx: number) => {
+          const rawEmergency = ln.emergencyDetected;
+          const emergencyCount = Number(ln.emergencyCount ?? 0) || 0;
+          const emergencyDetected =
+            emergencyCount > 0 ||
+            rawEmergency === true ||
+            rawEmergency === 1 ||
+            rawEmergency === '1' ||
+            rawEmergency === 'true' ||
+            rawEmergency === 'True';
+          return {
+            laneId: typeof ln.laneId === 'number' ? ln.laneId : idx + 1,
+            signalTime: ln.signalTime,
+            vehiclesPerSecond: ln.vehiclesPerSecond,
+            rateOfChange: ln.rateOfChange,
+            annotatedVideo: ln.annotatedVideo ? `http://localhost:5000${ln.annotatedVideo}` : undefined,
+            vehicleCount: ln.vehicleCount,
+            direction: ln.direction,
+            emergencyDetected,
+            emergencyCount,
+          };
+        });
         resolve({ signalTime: 0, lanes: lanesOut });
       } catch (err) {
         reject(err);

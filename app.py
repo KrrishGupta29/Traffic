@@ -70,6 +70,24 @@ try:
 except Exception:
     DEVICE = "cpu"
 
+# Determine emergency class ids from custom model names (prefer labels containing 'ambulance')
+def _infer_emergency_class_ids(m) -> set:
+    try:
+        names = getattr(m, 'names', None)
+        if isinstance(names, dict):
+            ids = {int(i) for i, n in names.items() if 'ambulance' in str(n).lower()}
+            if ids:
+                return ids
+            # fallback: if single-class model, assume that class 0 is ambulance
+            if len(names) == 1:
+                return {0}
+        # fallback default
+        return {0}
+    except Exception:
+        return {0}
+
+EMERGENCY_CLASS_IDS = _infer_emergency_class_ids(model_custom)
+
 # Initialize stream processor for live metrics
 stream_processor = StreamProcessor(model_coco)
 
@@ -100,14 +118,14 @@ def detect():
     results_custom = model_custom.predict(
         filepath,
         imgsz=512,
-        conf=0.25,
+        conf=0.6,
         device=DEVICE,
         verbose=False,
     )[0]
 
     vehicle_count = sum(1 for cls in results_coco.boxes.cls if int(cls) in vehicle_classes)
 
-    emergency_classes = {80, 81}  # assuming your custom model labels are 0: ambulance, 1: fire truck
+    emergency_classes = EMERGENCY_CLASS_IDS
     emergency_detected = any(int(cls) in emergency_classes for cls in results_custom.boxes.cls)
 
     frame = cv2.imread(filepath)
@@ -117,7 +135,12 @@ def detect():
         cls_id = int(box.cls[0])
         if cls_id in emergency_classes:  # only for custom emergency classes
             x1, y1, x2, y2 = map(int, box.xyxy[0])
-            label = "ambulance" if cls_id == 80 else "fire truck"
+            # Label from model names when available
+            try:
+                name = model_custom.names.get(cls_id, 'ambulance') if isinstance(model_custom.names, dict) else 'ambulance'
+            except Exception:
+                name = 'ambulance'
+            label = str(name)
             conf = float(box.conf[0])
             text = f"{label} {conf:.2f}"
 
@@ -303,6 +326,9 @@ def analyze_video():
         annotated_output_path=annotated_path,
         target_fps=4.0,
         max_seconds=8,
+        model_emergency=model_custom,
+        emergency_class_ids=EMERGENCY_CLASS_IDS,
+        emergency_confidence=0.6,
     )
     # Only return annotated video URL if file exists, has size, and frames were written
     try:
@@ -410,7 +436,14 @@ def analyze_video_multi_v1():
 
     lanes_out = []
     for direction, src_path, ann_path in provided:
-        metrics = analyze_video_file(model_coco, src_path, annotated_output_path=ann_path)
+        metrics = analyze_video_file(
+            model_coco,
+            src_path,
+            annotated_output_path=ann_path,
+            model_emergency=model_custom,
+            emergency_class_ids=EMERGENCY_CLASS_IDS,
+            emergency_confidence=0.6,
+        )
         try:
             path_from_writer = metrics.get("annotatedOutputPath") or ann_path
             if (
@@ -443,6 +476,14 @@ def analyze_video_multi_v1():
             signal_time = int(round(raw_time))
         except Exception:
             signal_time = 33
+        try:
+            emergency_count = int(metrics.get('emergencyCount', 0))
+        except Exception:
+            emergency_count = 0
+        emergency_detected = emergency_count > 0 or bool(metrics.get('emergencyDetected'))
+        # Add +3s if ambulance detected in this direction
+        if emergency_detected:
+            signal_time += 3
         signal_time = max(15, min(65, signal_time))
 
         lanes_out.append({
@@ -451,7 +492,9 @@ def analyze_video_multi_v1():
             'rateOfChange': metrics.get('rateOfChange', 0.0),
             'vehicleCount': metrics.get('vehicleCount', 0),
             'signalTime': signal_time,
-            'annotatedVideo': metrics.get('annotatedVideo')
+            'annotatedVideo': metrics.get('annotatedVideo'),
+            'emergencyDetected': bool(emergency_detected),
+            'emergencyCount': int(emergency_count),
         })
 
     # Enforce same timing within pairs: NS and EW use the greater of the pair
@@ -542,7 +585,14 @@ def analyze_video_multi():
             base_annotated = f"{os.path.splitext(filename)[0]}_annotated.mp4"
             annotated_path = os.path.join(RESULT_FOLDER, base_annotated)
 
-            metrics = analyze_video_file(model_coco, filepath, annotated_output_path=annotated_path)
+            metrics = analyze_video_file(
+                model_coco,
+                filepath,
+                annotated_output_path=annotated_path,
+                model_emergency=model_custom,
+                emergency_class_ids=EMERGENCY_CLASS_IDS,
+                emergency_confidence=0.6,
+            )
             try:
                 path_from_writer = metrics.get("annotatedOutputPath") or annotated_path
                 if (
@@ -554,12 +604,20 @@ def analyze_video_multi():
             except Exception:
                 pass
 
+            try:
+                emergency_count = int(metrics.get("emergencyCount", 0))
+            except Exception:
+                emergency_count = 0
+            emergency_detected = emergency_count > 0 or bool(metrics.get("emergencyDetected"))
+
             lanes.append({
                 "lane": idx,
                 "vehiclesPerSecond": metrics.get("vehiclesPerSecond", 0.0),
                 "rateOfChange": metrics.get("rateOfChange", 0.0),
                 "vehicleCount": metrics.get("vehicleCount", 0),
                 "annotatedVideo": metrics.get("annotatedVideo", None),
+                "emergencyDetected": bool(emergency_detected),
+                "emergencyCount": int(emergency_count),
             })
         else:
             lanes.append({
@@ -568,6 +626,8 @@ def analyze_video_multi():
                 "rateOfChange": 0.0,
                 "vehicleCount": 0,
                 "annotatedVideo": None,
+                "emergencyDetected": False,
+                "emergencyCount": 0,
             })
 
 

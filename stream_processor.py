@@ -211,12 +211,17 @@ class StreamProcessor:
 def analyze_video_file(model_coco: YOLO, source_path: str, vehicle_classes: Optional[set] = None,
                        target_fps: float = 4.0, slope_window_seconds: int = 10,
                        annotated_output_path: Optional[str] = None,
-                       max_seconds: Optional[int] = 8) -> Dict[str, float]:
+                       max_seconds: Optional[int] = 8,
+                       model_emergency: Optional[YOLO] = None,
+                       emergency_class_ids: Optional[set] = None,
+                       emergency_confidence: float = 0.5) -> Dict[str, float]:
     """
     Offline analysis for an uploaded video file. Returns summary metrics including
     vehiclesPerSecond (EMA) and rateOfChange (slope of cps over time).
     """
     vehicle_classes = vehicle_classes or {2, 3, 5, 7}
+    # Emergency detection setup (if custom model provided)
+    emergency_class_ids = emergency_class_ids or set()
     cap = cv2.VideoCapture(source_path)
     if not cap.isOpened():
         return {"vehiclesPerSecond": 0.0, "rateOfChange": 0.0, "dataPoints": 0.0}
@@ -268,6 +273,8 @@ def analyze_video_file(model_coco: YOLO, source_path: str, vehicle_classes: Opti
     max_unseen_seconds: int = 3
 
     total_unique_vehicles: int = 0
+    emergency_detected_overall: bool = False
+    total_emergency_detections: int = 0
 
     try:
         processed_seconds = 0
@@ -345,6 +352,33 @@ def analyze_video_file(model_coco: YOLO, source_path: str, vehicle_classes: Opti
                             pruned.append(tr)
                     active_tracks = pruned
 
+            # Run emergency model (if provided) for this frame
+            emergency_results = None
+            if process_this_frame and model_emergency is not None:
+                try:
+                    emergency_results = model_emergency.predict(
+                        frame,
+                        imgsz=512,
+                        conf=max(0.0, min(1.0, emergency_confidence)),
+                        device=("cuda" if torch.cuda.is_available() else "cpu"),
+                        verbose=False,
+                    )[0]
+                    if emergency_results and emergency_results.boxes is not None and len(emergency_results.boxes) > 0:
+                        # If class set is provided, filter by it; otherwise treat all detections as emergency
+                        classes_arr = emergency_results.boxes.cls
+                        emergency_hits = 0
+                        for idx in range(len(classes_arr)):
+                            cls_id = int(classes_arr[idx])
+                            if (not emergency_class_ids) or (cls_id in emergency_class_ids):
+                                score = float(emergency_results.boxes.conf[idx]) if emergency_results.boxes.conf is not None else 0.0
+                                if score >= emergency_confidence:
+                                    emergency_hits += 1
+                        if emergency_hits > 0:
+                            emergency_detected_overall = True
+                            total_emergency_detections += emergency_hits
+                except Exception:
+                    pass
+
             # Create/write annotated frame if requested
             if annotated_output_path is not None and process_this_frame:
                 annotated_frame = results.plot()
@@ -360,6 +394,28 @@ def analyze_video_file(model_coco: YOLO, source_path: str, vehicle_classes: Opti
                             x1, y1, x2, y2 = [int(v) for v in xyxy[idx]]
                             cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), (0, 255, 255), 2)
                             cv2.putText(annotated_frame, f"ID {tid}", (x1, max(0, y1 - 6)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 2)
+                except Exception:
+                    pass
+
+                # Draw emergency detections (red boxes with label) if available
+                try:
+                    if emergency_results is not None and emergency_results.boxes is not None and len(emergency_results.boxes) > 0:
+                        classes_arr = emergency_results.boxes.cls
+                        xyxy_em = emergency_results.boxes.xyxy
+                        confs = emergency_results.boxes.conf
+                        for idx in range(len(xyxy_em)):
+                            cls_id = int(classes_arr[idx])
+                            if emergency_class_ids and (cls_id not in emergency_class_ids):
+                                continue
+                            score = float(confs[idx]) if confs is not None and len(confs) > idx else 0.0
+                            if score < emergency_confidence:
+                                continue
+                            x1, y1, x2, y2 = [int(v) for v in xyxy_em[idx]]
+                            cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), (0, 0, 255), 2)
+                            label = f"ambulance {score:.2f}" if score > 0 else "ambulance"
+                            (tw, th), baseline = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
+                            cv2.rectangle(annotated_frame, (x1, max(0, y1 - th - baseline - 3)), (x1 + tw, y1), (0, 0, 255), -1)
+                            cv2.putText(annotated_frame, label, (x1, max(0, y1 - baseline - 2)), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
                 except Exception:
                     pass
                 if writer is None:
@@ -493,6 +549,8 @@ def analyze_video_file(model_coco: YOLO, source_path: str, vehicle_classes: Opti
         "annotatedFrames": int(frames_written),
         "annotatedOutputPath": selected_output_path or "",
         "vehicleCount": int(total_unique_vehicles),
+        "emergencyDetected": bool(emergency_detected_overall),
+        "emergencyCount": int(total_emergency_detections),
     }
 
 

@@ -1,8 +1,9 @@
 import React from 'react';
-import { TrendingUp, CheckCircle, Timer } from 'lucide-react';
+import { TrendingUp, CheckCircle, Timer, Siren } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { StatsCard } from './StatsCard';
 import { TrafficLight } from './TrafficLight';
+import { Badge } from '@/components/ui/badge';
 
 interface LaneResult {
   laneId: number;
@@ -12,6 +13,8 @@ interface LaneResult {
   annotatedVideo?: string;
   vehicleCount?: number;
   direction?: string;
+  emergencyDetected?: boolean;
+  emergencyCount?: number;
 }
 
 interface TrafficResultsMultiProps {
@@ -90,9 +93,17 @@ export const TrafficResultsMulti: React.FC<TrafficResultsMultiProps> = ({ lanes,
     <Card className="bg-gradient-card border-border shadow-card">
       <CardHeader>
         <div className="flex items-center justify-between gap-2">
-          <CardTitle className="flex items-center gap-2 text-lg font-bold">
-            {title || (ln?.direction ? ln.direction.toUpperCase() : `Lane ${ln?.laneId ?? ''}`)}
-          </CardTitle>
+          <div className="flex items-center gap-3">
+            <CardTitle className="flex items-center gap-2 text-lg font-bold">
+              {title || (ln?.direction ? ln.direction.toUpperCase() : `Lane ${ln?.laneId ?? ''}`)}
+            </CardTitle>
+            {typeof ln?.emergencyCount === 'number' && ln.emergencyCount > 0 && (
+              <Badge variant="destructive" className="flex items-center gap-1">
+                <Siren className="w-3.5 h-3.5" />
+                Ambulance Detected
+              </Badge>
+            )}
+          </div>
           {rightExtra}
         </div>
       </CardHeader>
